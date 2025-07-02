@@ -1,0 +1,152 @@
+---
+title: "Heatmaps in Python"
+format: gfm
+---
+
+## Introduction
+
+Heatmaps are a powerful visualization tool for representing matrix data, where individual values are represented as colors. They are particularly useful for displaying large datasets, such as those found in genomics, to reveal patterns and clusters. This document will guide you through creating a visually appealing and informative heatmap for count data using the `seaborn` package in Python.
+
+We will replicate the steps from the R example, focusing on robust color schemes and adding annotations to enhance interpretation.
+
+```{r}
+Sys.setenv(RETICULATE_PYTHON = "/opt/anaconda3/envs/cosmoda/bin/python")
+```
+
+
+## 1. Preparing Your Data
+
+First, we'll import the necessary Python libraries. We will use `seaborn` and `matplotlib` for plotting, and `pandas` and `numpy` for data manipulation.
+
+```{python}
+#| echo: true
+#| message: false
+#| warning: false
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
+# Set plot style
+sns.set_theme(style="white")
+```
+
+For this tutorial, we will use a built-in dataset from `seaborn` to get some count data. In a real-world scenario, you would load your own data, for instance, from a CSV file using `pd.read_csv()`.
+
+```{python}
+#| echo: true
+# Load the flights dataset and pivot it to create a matrix
+count_data = pd.read_csv("./data/count.csv")
+count_data = flights.pivot(index="month", columns="year", values="passengers")
+
+# Calculate relative abundance (proportion) for each column (year)
+count_data = count_data.div(count_data.sum(axis=0), axis=1)
+
+# Create annotation data for columns (e.g., sample type)
+# For this example, we'll create a simple annotation for decades
+years = count_data.columns
+decades = ['1940s' if year < 1950 else '1950s' if year < 1960 else '1960s' for year in years]
+col_annotation = pd.DataFrame({'Decade': decades}, index=years)
+
+print("Data Shape:", count_data.shape)
+count_data.head()
+```
+
+## 2. Creating a Basic Heatmap
+
+With our data ready, let's create a simple heatmap using the `seaborn.heatmap()` function.
+
+```{python}
+#| echo: true
+#| fig-cap: "A basic heatmap of the count data."
+plt.figure(figsize=(8, 6))
+sns.heatmap(count_data)
+plt.title("A basic heatmap of the count data")
+plt.show()
+```
+
+As you can see, the patterns are visible but could be enhanced.
+
+## 3. Choosing a Robust Color Scheme & Transforming Data
+
+The default color scheme is functional, but we can do better. We will transform the data and use a diverging palette with a robust color mapping to highlight variations more effectively.
+
+First, we'll apply a log10 transformation to the data. Since log(0) is undefined, we first replace zeros with a very small number (half of the minimum non-zero value).
+
+```{python}
+#| echo: true
+#| fig-cap: "Heatmap with log-transformed data."
+# Replace 0 with a small value (min_value / 2)
+min_value = count_data[count_data > 0].min().min()
+count_data_log = count_data.replace(0, min_value / 2)
+
+# Log10 transform the data
+count_data_log = np.log10(count_data_log)
+
+# Create a diverging color palette
+diverging_palette = sns.diverging_palette(240, 20, as_cmap=True)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(count_data_log, cmap=diverging_palette, xticklabels=True, yticklabels=True)
+plt.title("Log10 Relative Abundance")
+plt.show()
+```
+
+To create a more robust color scheme, we can anchor the colormap to specific quantiles of the data. This prevents a few extreme values from dominating the color scale. We can do this using the `vmin` and `vmax` arguments.
+
+```{python}
+#| echo: true
+#| fig-cap: "Heatmap with a robust color scale anchored to quantiles."
+# Calculate the 2nd and 98th quantiles to anchor the colormap
+vmin = count_data_log.quantile(0.02).min()
+vmax = count_data_log.quantile(0.98).max()
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(count_data_log, 
+            cmap=diverging_palette, 
+            vmin=vmin, 
+            vmax=vmax,
+            xticklabels=True, 
+            yticklabels=True)
+plt.title("Log10 Relative Abundance with Robust Color Scale")
+plt.show()
+```
+
+## 4. Adding Annotations and Clustering
+
+Annotations provide additional context. The `seaborn.clustermap` function is the direct equivalent of R's `pheatmap`, as it handles both clustering and annotations together seamlessly. We can also customize the annotation colors.
+
+```{python}
+#| echo: true
+#| fig-cap: "Clustered heatmap with column annotations."
+
+# Define colors for annotations
+decade_colors = {'1940s': '#4E79A7', '1950s': '#F28E2B', '1960s': '#59A14F'}
+col_colors = col_annotation['Decade'].map(decade_colors)
+
+# Create the clustermap
+g = sns.clustermap(count_data_log, 
+                   cmap=diverging_palette, 
+                   vmin=vmin, 
+                   vmax=vmax,
+                   col_colors=col_colors, 
+                   linewidths=0.5,
+                   col_cluster=True,
+                   row_cluster=True,
+                   figsize=(9, 8))
+
+# Add a title to the figure
+g.fig.suptitle('Clustered Heatmap with Annotations', y=1.02)
+
+# Add axis titles
+g.ax_heatmap.set_xlabel("Year")
+g.ax_heatmap.set_ylabel("Month")
+
+# Add a legend for the annotation
+from matplotlib.patches import Patch
+handles = [Patch(facecolor=decade_colors[name]) for name in decade_colors]
+plt.legend(handles, decade_colors, title='Decade', bbox_to_anchor=(1, 1), 
+           bbox_transform=plt.gcf().transFigure, loc='upper right')
+
+plt.show()
+
